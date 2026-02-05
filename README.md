@@ -11,9 +11,17 @@ A comprehensive Python-based trading prediction system designed to generate **Bu
 - **Robust Backtesting**: Simulation engine with commission, slippage, and position sizing logic.
 - **Risk Management**: Kill switch, daily loss limits, and volatility-adjusted position sizing.
 - **Paper Trading**: Live trading simulation with real-time data streaming and logging.
+- **Full-Stack Dashboard**:
+    -   **Frontend**: React (Vite) + TypeScript + Lightweight Charts.
+    -   **Backend**: FastAPI + WebSockets for real-time signal broadcasting.
 
 ## 🛠️ Installation
 
+### Prerequisites
+- Python 3.9+
+- Node.js 18+ (for Web Dashboard)
+
+### Backend Setup
 1.  **Clone the repository** (if applicable) or navigate to the project directory.
 
 2.  **Create and activate a virtual environment**:
@@ -27,9 +35,19 @@ A comprehensive Python-based trading prediction system designed to generate **Bu
     source venv/bin/activate
     ```
 
-3.  **Install dependencies**:
+3.  **Install Python dependencies**:
     ```bash
     pip install -r requirements.txt
+    ```
+
+### Frontend Setup
+1.  Navigate to the `web` directory:
+    ```bash
+    cd web
+    ```
+2.  Install Node dependencies:
+    ```bash
+    npm install
     ```
 
 ## 📖 Usage
@@ -76,6 +94,7 @@ This will open:
 
 ```
 trading_ai/
+├── api/            # FastAPI backend server
 ├── backtest/       # Backtesting engine and metrics
 ├── config/         # Configuration settings
 ├── data/           # Data fetching and storage
@@ -84,6 +103,7 @@ trading_ai/
 ├── models/         # Model training and prediction logic
 ├── risk/           # Risk management modules
 ├── utils/          # Helper functions
+├── web/            # React Frontend
 ├── main.py         # Main CLI entry point
 └── requirements.txt
 ```
