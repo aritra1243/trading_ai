@@ -25,7 +25,7 @@ class DataFetcher:
     """
     
     VALID_SOURCES = ['yahoo', 'binance']
-    VALID_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
+    VALID_TIMEFRAMES = ['1m', '3m', '5m', '10m', '15m', '30m', '1h', '4h', '1d', '1w']
     
     def __init__(self, data_dir: Optional[Path] = None):
         """
@@ -95,12 +95,23 @@ class DataFetcher:
         except ImportError:
             raise ImportError("yfinance not installed. Run: pip install yfinance")
         
+        # Determine base timeframe for resampling
+        resample_rule = None
+        target_timeframe = timeframe
+
+        if timeframe == '3m':
+            target_timeframe = '1m'
+            resample_rule = '3min'
+        elif timeframe == '10m':
+            target_timeframe = '5m'
+            resample_rule = '10min'
+        
         # Map timeframe to yfinance interval
         interval_map = {
             '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m',
             '1h': '1h', '4h': '4h', '1d': '1d', '1w': '1wk'
         }
-        interval = interval_map.get(timeframe, '1d')
+        interval = interval_map.get(target_timeframe, '1d')
         
         ticker = yf.Ticker(symbol)
         
@@ -122,9 +133,30 @@ class DataFetcher:
         elif 'datetime' in df.columns:
             df = df.rename(columns={'datetime': 'timestamp'})
         
-        # Select only OHLCV columns
+        # Select only OHLCV columns first
         required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         df = df[[col for col in required_cols if col in df.columns]]
+
+        # Perform Resampling if needed
+        if resample_rule:
+            logger.info(f"Resampling data from {target_timeframe} to {timeframe}...")
+            # Set timestamp as index for resampling
+            df = df.set_index('timestamp')
+            
+            # Resample logic
+            df_resampled = df.resample(resample_rule).agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+            
+            # Drop empty rows (e.g. market closed periods)
+            df_resampled = df_resampled.dropna()
+            
+            # Reset index to get timestamp back as column
+            df = df_resampled.reset_index()
         
         return df
     

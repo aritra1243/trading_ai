@@ -123,88 +123,136 @@ class LiveTrader:
         self.trades: List[PaperTrade] = []
         self.predictions_log: List[Dict] = []
         self.equity_history: List[Dict] = []
+        self.signal_history: List[Dict] = [] # Track all signals for the session
         
         # Control
         self.is_running = False
+        self.running = False # Changed from is_running
         self._stop_event = threading.Event()
         
         # Callbacks
         self.on_signal: Optional[Callable] = None
         self.on_trade: Optional[Callable] = None
+        self.on_update: Optional[Callable] = None
+        self.on_history: Optional[Callable] = None
+        self.on_signal_history: Optional[Callable] = None # New callback for signal history
     
     def start(self, duration_minutes: Optional[int] = None):
         """
-        Start paper trading loop.
+        Start the paper trading session.
         
         Args:
-            duration_minutes: Optional duration to run (None = indefinite)
+            duration_minutes: Optional duration to run in minutes. If None, runs indefinitely.
         """
+        self.running = True
         logger.info(f"Starting paper trading for {self.symbol}...")
-        self.is_running = True
-        self._stop_event.clear()
         
-        end_time = None
-        if duration_minutes:
-            end_time = datetime.now() + timedelta(minutes=duration_minutes)
-        
+        if self.data_source == 'yahoo':
+            logger.info("Note: Yahoo Finance data may be delayed. For real-time data, consider using Binance.")
+            
         try:
-            while not self._stop_event.is_set():
-                # Check duration
-                if end_time and datetime.now() > end_time:
-                    logger.info("Duration limit reached, stopping.")
-                    break
-                
-                # Run one iteration
-                self._trading_iteration()
-                
-                # Wait for next update
-                self._stop_event.wait(self.update_interval)
-        
+            self._run_loop(duration_minutes)
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
-        finally:
-            self.is_running = False
-            self._save_session()
-    
-    def stop(self):
-        """Stop the trading loop."""
-        logger.info("Stopping paper trading...")
-        self._stop_event.set()
-    
-    def _trading_iteration(self):
-        """Execute one trading iteration."""
-        try:
-            # Fetch latest data
-            df = self._fetch_latest_data()
-            if df is None or len(df) < 50:
-                logger.warning("Insufficient data")
-                return
-            
-            current_price = df['close'].iloc[-1]
-            current_time = datetime.now()
-            
-            # Update open positions
-            self._update_positions(current_price, current_time)
-            
-            # Record equity
-            self._record_equity(current_time)
-            
-            # Generate signal
-            signal = self._generate_signal(df)
-            
-            if signal is None:
-                return
-            
-            # Log prediction
-            if self.log_predictions:
-                self._log_prediction(signal, current_price, current_time)
-            
-            # Execute signal if conditions met
-            if signal.signal != 0:
-                self._execute_signal(signal, current_price, current_time)
-            
         except Exception as e:
-            logger.error(f"Error in trading iteration: {e}")
+            logger.error(f"Error in trading loop: {e}")
+            traceback.print_exc()
+        finally:
+            self.stop()
+
+    def _run_loop(self, duration_minutes: Optional[int] = None):
+        """Main trading loop."""
+        start_time = datetime.now()
+        
+        history_sent = False 
+
+        while self.running:
+            try:
+                loop_start = datetime.now()
+                
+                # Check duration
+                if duration_minutes:
+                    elapsed = (loop_start - start_time).total_seconds() / 60
+                    if elapsed >= duration_minutes:
+                        logger.info("Duration reached. Stopping session.")
+                        break
+                
+                # Fetch latest data
+                df = self._fetch_latest_data()
+                
+                if df is None or df.empty:
+                    logger.warning("Insufficient data")
+                    time.sleep(self.update_interval)
+                    continue
+                
+                # Broadcast History (Once)
+                if not history_sent:
+                    if self.on_history:
+                        self.on_history(df)
+                    if self.on_signal_history and self.signal_history:
+                        self.on_signal_history(self.signal_history)
+                    history_sent = True
+
+                # Process latest candle
+                current_candle = df.iloc[-1]
+                current_price = current_candle['close']
+                current_time = pd.to_datetime(current_candle['timestamp']) if 'timestamp' in current_candle else df.index[-1]
+                
+                # Feature Engineering
+                try:
+                    # Generate features (using internal method as create_features doesn't exist)
+                    df_features = self.feature_engineer._generate_all_features(df, generate_labels=False)
+                except Exception as e:
+                    logger.error(f"Feature engineering error: {e}")
+                    time.sleep(self.update_interval)
+                    continue
+                
+                # Process positions (sl/tp)
+                self._update_positions(current_price, current_time)
+                
+                # Record equity
+                self._record_equity(current_time)
+                
+                # Broadcast update (Full Candle)
+                if self.on_update:
+                    self.on_update({
+                        'timestamp': current_time.isoformat(),
+                        'open': float(current_candle['open']),
+                        'high': float(current_candle['high']),
+                        'low': float(current_candle['low']),
+                        'close': float(current_candle['close']),
+                        'volume': float(current_candle['volume']),
+                        'equity': self.capital + sum(p.unrealized_pnl for p in self.positions),
+                        'open_positions': len(self.positions)
+                    })
+                
+                # Generate signal
+                signal = self._generate_signal(df)
+                
+                if signal is None:
+                    time.sleep(self.update_interval)
+                    continue
+                
+                # Log prediction
+                if self.log_predictions:
+                    self._log_prediction(signal, current_price, current_time)
+                    if signal.signal != 0:
+                        self.signal_history.append(signal.to_dict())
+
+                # Broadcast signal to UI
+                if self.on_signal:
+                    self.on_signal(signal)
+                
+                # Execute signal if conditions met
+                if signal.signal != 0:
+                    self._execute_signal(signal, current_price, current_time)
+                
+                # Wait for next update
+                time.sleep(self.update_interval)
+
+            except Exception as e:
+                logger.error(f"Error in trading iteration: {e}")
+                time.sleep(self.update_interval)
     
     def _fetch_latest_data(self) -> Optional[pd.DataFrame]:
         """Fetch latest OHLCV data."""
@@ -213,8 +261,12 @@ class LiveTrader:
             fetcher = DataFetcher()
             
             # Determine suitable period based on timeframe
-            # Yahoo Finance limits 5m data to last 60 days
-            period = '1mo' if self.timeframe in ['1m', '5m', '15m', '30m', '1h'] else '3mo'
+            if self.timeframe in ['1m', '3m']:
+                period = '5d'
+            elif self.timeframe in ['5m', '10m', '15m', '30m', '1h']:
+                period = '1mo'
+            else:
+                period = '3mo'
             
             # Fetch recent data (need history for features)
             df = fetcher.fetch_ohlcv(
@@ -414,6 +466,23 @@ class LiveTrader:
             'take_profit': signal.take_profit
         }
         self.predictions_log.append(prediction)
+        
+        # Add to signal history for UI
+        if signal.signal != 0:
+            sig_entry = {
+                'timestamp': timestamp.isoformat(),
+                'signal_name': signal.signal_name,
+                'direction': signal.signal,
+                'price': price,
+                'confidence': signal.confidence
+            }
+            self.signal_history.append(sig_entry)
+            
+            # Broadcast update if new callback exists (optional, or rely on on_signal)
+            if self.on_signal_history:
+                 # In a real app we might broadcast just the new one, but for simplicity here we assume
+                 # on_signal handles the live event. on_signal_history is for initial load.
+                 pass
     
     def _log_trade(self, trade: PaperTrade):
         """Log a trade to file."""

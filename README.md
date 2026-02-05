@@ -59,7 +59,18 @@ Run a live paper trading session (simulated execution):
 ```bash
 python main.py --mode live --symbol SPY --paper --duration 60
 ```
+python main.py --mode live --symbol SPY --paper --duration 60
+```
 *(Runs for 60 minutes)*
+
+### 5. Web Dashboard (Recommended)
+Launch the full full-stack interface with real-time charts:
+```bash
+./start_dashboard.bat
+```
+This will open:
+-   **Backend**: `http://localhost:8000`
+-   **Frontend**: `http://localhost:5173`
 
 ## 📂 Project Structure
 
