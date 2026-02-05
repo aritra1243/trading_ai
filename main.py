@@ -140,11 +140,14 @@ def run_train(args, logger):
     
     if args.download:
         logger.info("Downloading fresh data...")
+        # Adjust period for intraday data
+        period = '59d' if args.timeframe in ['1m', '5m', '15m', '30m', '60m', '1h'] else '2y'
+        
         df = fetcher.fetch_ohlcv(
             symbol=args.symbol,
             source=args.source,
             timeframe=args.timeframe,
-            period='2y'
+            period=period
         )
         fetcher.save_to_csv(df, f"{args.symbol}_{args.source}_{args.timeframe}")
     else:
@@ -241,10 +244,15 @@ def run_backtest(args, logger):
     
     # Fetch data
     fetcher = DataFetcher(data_dir=DATA_DIR)
+    
+    # Adjust period for intraday data (passed to fetch_ohlcv if fetching is needed)
+    period = '59d' if args.timeframe in ['1m', '5m', '15m', '30m', '60m', '1h'] else '2y'
+    
     df = fetcher.get_cached_or_fetch(
         symbol=args.symbol,
         source=args.source,
-        timeframe=args.timeframe
+        timeframe=args.timeframe,
+        period=period
     )
     
     logger.info(f"Data shape: {df.shape}")
@@ -325,11 +333,15 @@ def run_predict(args, logger):
     
     # Fetch latest data
     fetcher = DataFetcher(data_dir=DATA_DIR)
+    
+    # Adjust period for intraday data
+    period = '1mo' if args.timeframe in ['1m', '5m', '15m', '30m', '60m', '1h'] else '3mo'
+    
     df = fetcher.fetch_ohlcv(
         symbol=args.symbol,
         source=args.source,
         timeframe=args.timeframe,
-        period='3mo'
+        period=period
     )
     
     # Generate signal
@@ -398,6 +410,7 @@ def run_live(args, logger):
         initial_capital=args.capital,
         symbol=args.symbol,
         data_source=args.source,
+        timeframe=args.timeframe,
         update_interval=60
     )
     

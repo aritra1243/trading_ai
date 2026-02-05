@@ -69,6 +69,7 @@ class LiveTrader:
         # Data settings
         symbol: str = 'SPY',
         data_source: str = 'yahoo',
+        timeframe: str = '1d',  # Added timeframe
         update_interval: int = 60,  # seconds
         # Trading settings
         allow_shorting: bool = False,
@@ -88,6 +89,7 @@ class LiveTrader:
             initial_capital: Starting paper capital
             symbol: Trading symbol
             data_source: Data source ('yahoo' or 'binance')
+            timeframe: Data timeframe (e.g., '1d', '5m')
             update_interval: Seconds between updates
             allow_shorting: Allow short positions
             max_positions: Maximum concurrent positions
@@ -104,6 +106,7 @@ class LiveTrader:
         
         self.symbol = symbol
         self.data_source = data_source
+        self.timeframe = timeframe
         self.update_interval = update_interval
         
         self.allow_shorting = allow_shorting
@@ -209,12 +212,16 @@ class LiveTrader:
             from data import DataFetcher
             fetcher = DataFetcher()
             
+            # Determine suitable period based on timeframe
+            # Yahoo Finance limits 5m data to last 60 days
+            period = '1mo' if self.timeframe in ['1m', '5m', '15m', '30m', '1h'] else '3mo'
+            
             # Fetch recent data (need history for features)
             df = fetcher.fetch_ohlcv(
                 symbol=self.symbol,
                 source=self.data_source,
-                timeframe='1d',
-                period='3mo'  # Last 3 months for feature calculation
+                timeframe=self.timeframe,
+                period=period  # Last 3 months for feature calculation
             )
             
             return df
