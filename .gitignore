@@ -28,6 +28,7 @@ env/
 ENV/
 .env
 .venv
+web/node_modules/
 
 # Installer logs
 pip-log.txt
